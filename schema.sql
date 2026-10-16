@@ -28,6 +28,24 @@ alter table users enable row level security;
 alter table groups enable row level security;
 alter table subscriptions enable row level security;
 
+drop policy if exists "full access users" on users;
+drop policy if exists "full access groups" on groups;
+drop policy if exists "full access subscriptions" on subscriptions;
+
 create policy "full access users" on users for all using (true) with check (true);
 create policy "full access groups" on groups for all using (true) with check (true);
 create policy "full access subscriptions" on subscriptions for all using (true) with check (true);
+
+create table if not exists keywords (
+  id bigserial primary key,
+  user_id bigint not null references users(user_id),
+  chat_id bigint not null references groups(chat_id),
+  keyword text not null,
+  created_at timestamptz not null default now(),
+  unique (user_id, chat_id, keyword)
+);
+
+alter table keywords enable row level security;
+
+drop policy if exists "full access keywords" on keywords;
+create policy "full access keywords" on keywords for all using (true) with check (true);
