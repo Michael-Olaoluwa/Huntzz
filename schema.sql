@@ -1,4 +1,17 @@
--- Run this in the Supabase SQL Editor (Dashboard → SQL Editor → New query)
+-- Huntzz — base schema.
+--
+-- A fresh database is created by running, in order:
+--   1. this file (schema.sql)
+--   2. migrations/001_lock_down_rls.sql
+--   3. migrations/002_chat_matchers.sql
+--   4. migrations/003_pending_input.sql
+--
+-- Run each in the Supabase SQL Editor (Dashboard -> SQL Editor -> New query).
+-- All statements are idempotent, so re-running is safe.
+--
+-- NOTE: RLS is enabled and NO permissive policies are created here. The bot uses
+-- the service_role key (which bypasses RLS); the anon/authenticated keys get
+-- nothing. Do NOT add permissive policies.
 
 create table if not exists users (
   user_id bigint primary key,
@@ -24,18 +37,6 @@ create table if not exists subscriptions (
   unique (user_id, chat_id)
 );
 
-alter table users enable row level security;
-alter table groups enable row level security;
-alter table subscriptions enable row level security;
-
-drop policy if exists "full access users" on users;
-drop policy if exists "full access groups" on groups;
-drop policy if exists "full access subscriptions" on subscriptions;
-
-create policy "full access users" on users for all using (true) with check (true);
-create policy "full access groups" on groups for all using (true) with check (true);
-create policy "full access subscriptions" on subscriptions for all using (true) with check (true);
-
 create table if not exists keywords (
   id bigserial primary key,
   user_id bigint not null references users(user_id),
@@ -45,7 +46,7 @@ create table if not exists keywords (
   unique (user_id, chat_id, keyword)
 );
 
+alter table users enable row level security;
+alter table groups enable row level security;
+alter table subscriptions enable row level security;
 alter table keywords enable row level security;
-
-drop policy if exists "full access keywords" on keywords;
-create policy "full access keywords" on keywords for all using (true) with check (true);

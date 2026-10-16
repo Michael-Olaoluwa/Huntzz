@@ -2,15 +2,21 @@
   "name": "cu-filter-bot",
   "type": "module",
   "version": "1.0.0",
-  "description": "",
-  "main": "index.js",
+  "description": "Huntzz — a Telegram bot that DMs members when group/channel messages match their keywords.",
+  "main": "bot.js",
   "scripts": {
+    "start": "node bot.js",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "keywords": [],
   "author": "",
   "license": "ISC",
+  "engines": {
+    "node": ">=20"
+  },
   "dependencies": {
+    "@grammyjs/auto-retry": "^2.0.2",
+    "@grammyjs/transformer-throttler": "^1.2.1",
     "@supabase/supabase-js": "^2.118.0",
     "dotenv": "^18.0.8",
     "grammy": "^1.46.0"
