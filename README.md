@@ -41,11 +41,19 @@ respects the subscription being active.
 ### 2. Create the Supabase project
 
 1. Create a project at [supabase.com](https://supabase.com).
-2. Open **SQL Editor → New query** and run, in this order:
-   1. `schema.sql`
-   2. `migrations/001_lock_down_rls.sql`
-   3. `migrations/002_chat_matchers.sql`
-   4. `migrations/003_pending_input.sql`
+2. Open **SQL Editor → New query** and set up the database. You have two
+   equivalent paths:
+   - **Simplest:** run `schema.sql` once. It is the complete current schema
+     (version 4) and is safe on any database — fresh *or* pre-existing. On an
+     older database it adds the missing columns and fixes the foreign keys; on a
+     fresh one it just builds everything.
+   - **Incremental:** on an existing database, run the migrations in numeric
+     order, once: `001_lock_down_rls.sql` → `002_chat_matchers.sql` →
+     `003_pending_input.sql` → `004_upgrade.sql`.
+   - Migrations must be run in order and **once**. `002` and `003` are **not**
+     re-runnable after `004` (004 replaces `chat_matchers` with a new return type,
+     and `CREATE OR REPLACE` cannot change a function's return type). `004` and
+     `schema.sql` are both safe to re-run.
 3. In **Settings → API**, copy:
    - Project URL → `SUPABASE_URL`
    - **service_role** key → `SUPABASE_KEY` (server-side only — never expose it)
@@ -132,11 +140,13 @@ worker process**.
 
 ```
 bot.js                        # the whole bot
-schema.sql                    # base tables (run first)
+schema.sql                    # complete current schema (version 4) — fresh installs run this
 migrations/
   001_lock_down_rls.sql       # RLS on, all permissive policies dropped
-  002_chat_matchers.sql       # single-query matcher RPC
+  002_chat_matchers.sql       # single-query matcher RPC (superseded by 004)
   003_pending_input.sql       # pending_input table, users.blocked, subscriptions.active
+  004_upgrade.sql             # pause/quiet/tz, alert_admins, alerts inbox, stats,
+                              # FK cascade rules, migrate_chat, new chat_matchers, inbox RPCs
 .env.example                  # template for .env
 ```
 
