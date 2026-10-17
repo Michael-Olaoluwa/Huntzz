@@ -14,8 +14,8 @@ original post.
 
 ## How it works
 
-1. An admin adds Huntzz to a group or channel. It registers the chat and posts a
-   short notice.
+1. An admin adds Huntzz to a group or channel. It registers the chat silently
+   (the admin gets a private confirmation).
 2. Members open the bot in private, tap **My groups**, and subscribe to the chats
    they want to follow (membership is verified with `getChatMember`).
 3. Members add **keywords** per group (up to 20 each; up to 50 subscriptions each).

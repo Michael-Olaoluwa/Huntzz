@@ -718,17 +718,6 @@ bot.on("my_chat_member", async (ctx) => {
       await bot.api
         .sendMessage(adder.id, `✅ "${chat.title}" is now registered.`)
         .catch(() => {});
-      // First-time registration: a short, polite notice in the group itself.
-      try {
-        await bot.api.sendMessage(
-          chat.id,
-          "Thanks for adding me! I’m Huntzz — I privately alert members when a message here matches keywords they’ve chosen. " +
-            "Members: open me and use /keywords to set yours. Admins: send me /privacy to see how data is handled. " +
-            "Remove me anytime to stop."
-        );
-      } catch (err) {
-        console.error(`[onboarding] could not post in ${chat.id}: ${err.description ?? err.message}`);
-      }
     }
   }
 
