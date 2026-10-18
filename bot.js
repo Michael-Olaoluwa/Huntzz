@@ -6,6 +6,10 @@ import { autoRetry } from "@grammyjs/auto-retry";
 import { apiThrottler } from "@grammyjs/transformer-throttler";
 import { fetchMembership } from "./lib.js";
 
+process.on("unhandledRejection", () => {
+  console.error("[process] unhandled rejection");
+});
+
 if (!process.env.BOT_TOKEN) {
   console.error("BOT_TOKEN is missing. Add it to your .env file.");
   process.exit(1);
@@ -107,7 +111,8 @@ const check = (op, res) => {
 const recordStat = (metric, by = 1) =>
   supabase
     .rpc("increment_stat", { p_metric: metric, p_by: by })
-    .then((res) => check(`stat:${metric}`, res));
+    .then((res) => check(`stat:${metric}`, res))
+    .catch(() => console.error(`[stats] ${metric} failed`));
 
 const upsertUser = async (user) => {
   const { data: existing } = check(
@@ -693,6 +698,7 @@ const sendAlertDM = async (
       parse_mode: "HTML",
       reply_markup: alertKeyboard(hit, link),
     });
+    return true;
   } catch (err) {
     if (err?.error_code === 403) {
       // User blocked the bot (or deactivated): pause their alerts.
@@ -710,6 +716,7 @@ const sendAlertDM = async (
         `[alerts] DM to ${userId} failed: ${err?.description ?? err?.message}`,
       );
     }
+    return false;
   }
 };
 
@@ -811,8 +818,14 @@ const matchAndDeliver = async (
 
     // Paused or quiet: the alert is still in the inbox; we just don't ping.
     if (shouldSkipDM(hit.matcher)) continue;
-    await sendAlertDM(userId, { chat, hit, preview, link, senderName });
-    recordStat("alerts_delivered");
+    const delivered = await sendAlertDM(userId, {
+      chat,
+      hit,
+      preview,
+      link,
+      senderName,
+    });
+    recordStat(delivered ? "alerts_delivered" : "alerts_failed");
   }
 };
 
