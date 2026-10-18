@@ -4,6 +4,7 @@ import { createHash } from "node:crypto";
 import { createClient } from "@supabase/supabase-js";
 import { autoRetry } from "@grammyjs/auto-retry";
 import { apiThrottler } from "@grammyjs/transformer-throttler";
+import { fetchMembership } from "./lib.js";
 
 if (!process.env.BOT_TOKEN) {
   console.error("BOT_TOKEN is missing. Add it to your .env file.");
@@ -208,8 +209,30 @@ const getChatMatchers = async (chatId) => {
 // My groups may only reveal chats the user is actually in. We ask Telegram
 // getChatMember once per (user, chat) and cache for 5 minutes. A failed lookup
 // is treated as "not a member" (never shown), which also avoids leaking titles.
-const MEMBERSHIP_CACHE_TTL_MS = 5 * 60 * 1000;
+const MEMBERSHIP_CACHE_TTL_MS = 10 * 60 * 1000;
 const membershipCache = new Map(); // `${userId}:${chatId}` -> { expires, isMember }
+const membershipQueue = [];
+let membershipChecksInFlight = 0;
+
+const pumpMembershipQueue = () => {
+  while (membershipChecksInFlight < 10 && membershipQueue.length) {
+    const { task, resolve, reject } = membershipQueue.shift();
+    membershipChecksInFlight += 1;
+    Promise.resolve()
+      .then(task)
+      .then(resolve, reject)
+      .finally(() => {
+        membershipChecksInFlight -= 1;
+        pumpMembershipQueue();
+      });
+  }
+};
+
+const withMembershipSlot = (task) =>
+  new Promise((resolve, reject) => {
+    membershipQueue.push({ task, resolve, reject });
+    pumpMembershipQueue();
+  });
 
 const rememberMembership = (userId, chatId, isMember) => {
   membershipCache.set(`${userId}:${chatId}`, {
@@ -218,20 +241,30 @@ const rememberMembership = (userId, chatId, isMember) => {
   });
 };
 
-const isChatMember = async (userId, chatId) => {
+const forgetMembership = (userId, chatId) =>
+  membershipCache.delete(`${userId}:${chatId}`);
+
+const verifyChatMembership = async (userId, chatId) => {
   const key = `${userId}:${chatId}`;
   const cached = membershipCache.get(key);
-  if (cached && cached.expires > Date.now()) return cached.isMember;
-
-  let isMember = false;
-  try {
-    const member = await bot.api.getChatMember(chatId, userId);
-    isMember = member.status !== "left" && member.status !== "kicked";
-  } catch {
-    isMember = false; // API error -> treat as not a member (not shown)
+  if (cached && cached.expires > Date.now()) {
+    return { ok: true, isMember: cached.isMember };
   }
-  rememberMembership(userId, chatId, isMember);
-  return isMember;
+
+  try {
+    const isMember = await withMembershipSlot(() =>
+      fetchMembership(bot.api, userId, chatId),
+    );
+    rememberMembership(userId, chatId, isMember);
+    return { ok: true, isMember };
+  } catch (error) {
+    return { ok: false, isMember: false, error };
+  }
+};
+
+const isChatMember = async (userId, chatId) => {
+  const result = await verifyChatMembership(userId, chatId);
+  return result.isMember;
 };
 
 // Deep link that opens the bot and offers to follow this chat.
@@ -719,7 +752,42 @@ const matchAndDeliver = async (
       hits.set(userId, { words: [], matcher, adminPost: true });
   }
 
-  for (const [userId, hit] of hits) {
+  const eligibleHits = [];
+  await Promise.all(
+    [...hits].map(async ([userId, hit]) => {
+      const membership = await verifyChatMembership(userId, chat.id);
+      if (!membership.ok) {
+        console.error(
+          `[membership] getChatMember failed for user ${userId} in chat ${chat.id}: ${membership.error?.description ?? membership.error?.message ?? "unknown error"}`,
+        );
+        return;
+      }
+      if (!membership.isMember) {
+        check(
+          "deactivateLeftSubscription",
+          await supabase
+            .from("subscriptions")
+            .update({ active: false })
+            .eq("user_id", userId)
+            .eq("chat_id", chat.id),
+        );
+        check(
+          "clearLeftUserAlerts",
+          await supabase
+            .from("alerts")
+            .delete()
+            .eq("user_id", userId)
+            .eq("chat_id", chat.id),
+        );
+        forgetMembership(userId, chat.id);
+        invalidateChatCache(chat.id);
+        return;
+      }
+      eligibleHits.push([userId, hit]);
+    }),
+  );
+
+  for (const [userId, hit] of eligibleHits) {
     const { error } = check(
       "insertAlert",
       await supabase.from("alerts").insert({
@@ -1771,19 +1839,16 @@ bot.callbackQuery("my_groups", async (ctx) => {
 bot.callbackQuery(/^sub:(-?\d+)$/, async (ctx) => {
   const chatId = Number(ctx.match[1]);
 
-  let member;
-  try {
-    member = await bot.api.getChatMember(chatId, ctx.from.id);
-  } catch {
+  const membership = await verifyChatMembership(ctx.from.id, chatId);
+  if (!membership.ok) {
     await answer(ctx, "I couldn't check your membership in that group.");
     return;
   }
-  if (member.status === "left" || member.status === "kicked") {
-    rememberMembership(ctx.from.id, chatId, false);
+  if (!membership.isMember) {
+    forgetMembership(ctx.from.id, chatId);
     await answer(ctx, "You're not a member of that group anymore.");
     return;
   }
-  rememberMembership(ctx.from.id, chatId, true);
 
   const { data: sub } = check(
     "findSub",
@@ -1861,6 +1926,7 @@ bot.callbackQuery(/^sub:(-?\d+)$/, async (ctx) => {
     nowFollowing = true;
   }
 
+  forgetMembership(ctx.from.id, chatId);
   invalidateChatCache(chatId);
 
   if (nowFollowing) {
