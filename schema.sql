@@ -1,14 +1,14 @@
--- Huntzz — complete schema, VERSION 5 (current).
+-- Huntzz — complete schema, VERSION 6 (current).
 --
 -- This single file is safe to run on ANY database, fresh or pre-existing, and
--- brings it to version 5. It contains everything from migrations 001–005: RLS
+-- brings it to version 6. It contains everything from migrations 001–006: RLS
 -- lockdown, pending_input, cascade rules, alerts, stats, inbox RPCs and the
 -- current chat_matchers. On a pre-existing database it adds any missing columns
 -- and normalises foreign keys; on a fresh database it does the same, once.
 --
 -- You therefore have two equivalent upgrade paths:
 --   * run THIS file, or
---   * run migrations 001 -> 002 -> 003 -> 004 -> 005 in numeric order, once.
+--   * run migrations 001 -> 002 -> 003 -> 004 -> 005 -> 006 in numeric order, once.
 -- Do NOT mix-and-match in a way that re-runs 002/003 after 004: those two are
 -- not re-runnable after 004 (004 replaces public.chat_matchers(bigint) with a
 -- new return type, and CREATE OR REPLACE cannot change a return type).
@@ -42,6 +42,7 @@ create table if not exists public.groups (
   type       text not null,
   added_by   bigint references public.users(user_id) on update cascade on delete set null,
   active     boolean not null default true,
+  notice_posted_at timestamptz,
   created_at timestamptz not null default now()
 );
 
@@ -105,6 +106,7 @@ alter table public.users         add column if not exists quiet_start      small
 alter table public.users         add column if not exists quiet_end        smallint;
 alter table public.users         add column if not exists tz               text     not null default 'Africa/Lagos';
 alter table public.users         add column if not exists setup_sound_done boolean  not null default false;
+alter table public.groups        add column if not exists notice_posted_at timestamptz;
 alter table public.groups        add column if not exists active           boolean  not null default true;
 alter table public.subscriptions add column if not exists active           boolean  not null default true;
 alter table public.subscriptions add column if not exists alert_admins     boolean  not null default false;
@@ -251,28 +253,48 @@ begin
     update public.pending_input set chat_id = p_new where chat_id = p_old;
     update public.groups        set chat_id = p_new where chat_id = p_old;
   else
-    delete from public.subscriptions s
-      where s.chat_id = p_old
+    delete from public.alerts a
+      where a.chat_id = p_old
         and exists (
-          select 1 from public.subscriptions t
-          where t.chat_id = p_new and t.user_id = s.user_id
+          select 1 from public.alerts n
+          where n.chat_id = p_new
+            and n.user_id = a.user_id
+            and n.message_id is not distinct from a.message_id
+        );
+    update public.alerts set chat_id = p_new where chat_id = p_old;
+
+    update public.subscriptions n
+       set active = n.active or o.active,
+           alert_admins = n.alert_admins or o.alert_admins
+      from public.subscriptions o
+     where n.chat_id = p_new
+       and o.chat_id = p_old
+       and n.user_id = o.user_id;
+    delete from public.subscriptions o
+      where o.chat_id = p_old
+        and exists (
+          select 1 from public.subscriptions n
+          where n.chat_id = p_new and n.user_id = o.user_id
         );
     update public.subscriptions set chat_id = p_new where chat_id = p_old;
 
-    delete from public.keywords k
-      where k.chat_id = p_old
+    delete from public.keywords o
+      where o.chat_id = p_old
         and exists (
-          select 1 from public.keywords t
-          where t.chat_id = p_new and t.user_id = k.user_id and t.keyword = k.keyword
+          select 1 from public.keywords n
+          where n.chat_id = p_new
+            and n.user_id = o.user_id
+            and n.keyword = o.keyword
         );
     update public.keywords set chat_id = p_new where chat_id = p_old;
 
-    update public.alerts        set chat_id = p_new where chat_id = p_old;
     update public.pending_input set chat_id = p_new where chat_id = p_old;
 
     delete from public.groups where chat_id = p_old;
   end if;
 end $$;
+
+comment on function public.migrate_chat(bigint, bigint) is 'v6';
 
 -- One row per active subscriber of an active chat. keywords may be empty;
 -- alert_admins subscribers are still returned. blocked users are excluded.
