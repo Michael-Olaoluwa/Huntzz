@@ -71,7 +71,10 @@ test("membership statuses accept only actual membership", () => {
   assert.equal(isMemberStatus({ status: "administrator" }), true);
   assert.equal(isMemberStatus({ status: "creator" }), true);
   assert.equal(isMemberStatus({ status: "restricted", is_member: true }), true);
-  assert.equal(isMemberStatus({ status: "restricted", is_member: false }), false);
+  assert.equal(
+    isMemberStatus({ status: "restricted", is_member: false }),
+    false,
+  );
   assert.equal(isMemberStatus({ status: "left" }), false);
   assert.equal(isMemberStatus({ status: "kicked" }), false);
 });
@@ -94,7 +97,16 @@ test("membership helper works with member, left, and error APIs", async () => {
     false,
   );
   await assert.rejects(
-    () => fetchMembership({ getChatMember: async () => { throw new Error("network"); } }, 1, 2),
+    () =>
+      fetchMembership(
+        {
+          getChatMember: async () => {
+            throw new Error("network");
+          },
+        },
+        1,
+        2,
+      ),
     /network/,
   );
 });

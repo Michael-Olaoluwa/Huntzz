@@ -31,17 +31,13 @@ export const keywordError = (keyword) => {
   return null;
 };
 
-const escapeRegex = (value) =>
-  value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+const escapeRegex = (value) => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
 const getKeywordRegex = (keyword) => {
   let regex = keywordRegexCache.get(keyword);
   if (!regex) {
     const pattern = escapeRegex(keyword).replace(/\s+/g, "\\s+");
-    regex = new RegExp(
-      `(?<![\\p{L}\\p{N}])${pattern}(?![\\p{L}\\p{N}])`,
-      "iu",
-    );
+    regex = new RegExp(`(?<![\\p{L}\\p{N}])${pattern}(?![\\p{L}\\p{N}])`, "iu");
     keywordRegexCache.set(keyword, regex);
   }
   return regex;
@@ -106,20 +102,21 @@ export const truncatePreview = (text, maxLength = ALERT_PREVIEW_LEN) => {
 export const duplicateAlertKey = (userId, chatId, messageId) =>
   messageId == null ? null : [userId, chatId, messageId].map(String).join(":");
 
-export const buildPrivacyText = () => [
-  "<b>Privacy</b>",
-  "",
-  "• I read messages only where I’ve been added, and only to check them against members’ keywords.",
-  `• For each match, I store a short preview (up to ${ALERT_PREVIEW_LEN} characters), the group name, a link when available, and the matched keywords for ${ALERT_RETENTION_DAYS} days so your inbox works.`,
-  `• I store at most ${MAX_ALERTS_PER_USER} alerts per user. Alerts for a group are deleted when you unfollow it or leave it.`,
-  "• Nothing is stored for messages that match nobody, and no media is stored.",
-  "• I store user ids, group ids, and the keywords you set. This data lives in a database run by the bot’s owner.",
-  "• You can clear your inbox or erase everything with /deleteme.",
-  "• Any group admin can remove me from a group at any time; that stops all reading there.",
-  "• Server logs contain message text only when the owner turns on debug mode.",
-  "",
-  "Questions? Message me here anytime.",
-].join("\n");
+export const buildPrivacyText = () =>
+  [
+    "<b>Privacy</b>",
+    "",
+    "• I read messages only where I’ve been added, and only to check them against members’ keywords.",
+    `• For each match, I store a short preview (up to ${ALERT_PREVIEW_LEN} characters), the group name, a link when available, and the matched keywords for ${ALERT_RETENTION_DAYS} days so your inbox works.`,
+    `• I store at most ${MAX_ALERTS_PER_USER} alerts per user. Alerts for a group are deleted when you unfollow it or leave it.`,
+    "• Nothing is stored for messages that match nobody, and no media is stored.",
+    "• I store user ids, group ids, and the keywords you set. This data lives in a database run by the bot’s owner.",
+    "• You can clear your inbox or erase everything with /deleteme.",
+    "• Any group admin can remove me from a group at any time; that stops all reading there.",
+    "• Server logs contain message text only when the owner turns on debug mode.",
+    "",
+    "Questions? Message me here anytime.",
+  ].join("\n");
 
 export const isMemberStatus = (member) =>
   member?.status === "creator" ||

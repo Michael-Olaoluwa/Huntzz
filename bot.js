@@ -426,17 +426,15 @@ const PENDING_ACTION_ADD_KEYWORD = "add_keyword";
 const setPending = async (userId, action, chatId) => {
   check(
     "setPending",
-    await supabase
-      .from("pending_input")
-      .upsert(
-        {
-          user_id: userId,
-          action,
-          chat_id: chatId,
-          created_at: new Date().toISOString(),
-        },
-        { onConflict: "user_id" },
-      ),
+    await supabase.from("pending_input").upsert(
+      {
+        user_id: userId,
+        action,
+        chat_id: chatId,
+        created_at: new Date().toISOString(),
+      },
+      { onConflict: "user_id" },
+    ),
   );
 };
 
@@ -1936,7 +1934,10 @@ bot.callbackQuery(/^post_intro:(-?\d+)$/, async (ctx) => {
   }
 
   const posted = await postGroupNotice(chatId);
-  await answer(ctx, posted ? "Intro posted in the group." : "I couldn't post the intro.");
+  await answer(
+    ctx,
+    posted ? "Intro posted in the group." : "I couldn't post the intro.",
+  );
 });
 
 // --- bot added to / removed from a group or channel ---
@@ -1957,8 +1958,10 @@ bot.on("my_chat_member", async (ctx) => {
       .maybeSingle();
     if (error) console.error("[supabase:findGroup]", error.message);
 
-    const isNoticeableChat = chat.type === "group" || chat.type === "supergroup";
-    const includeNoticeButton = GROUP_NOTICE_MODE === "button" && isNoticeableChat;
+    const isNoticeableChat =
+      chat.type === "group" || chat.type === "supergroup";
+    const includeNoticeButton =
+      GROUP_NOTICE_MODE === "button" && isNoticeableChat;
     const alertsKb = await getRegistrationButtons(chat.id, includeNoticeButton);
 
     if (existing) {

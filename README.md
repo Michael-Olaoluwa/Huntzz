@@ -8,7 +8,7 @@ original post.
 - Runs on **long polling** (no public web server or webhook needed).
 - Single file: `bot.js` (Node.js ESM, [grammY](https://grammy.dev), Supabase).
 - Storage: **Supabase** (Postgres). Users, groups, subscriptions, keywords and
-   matched-message previews are stored for the inbox.
+  matched-message previews are stored for the inbox.
 
 ---
 
@@ -44,17 +44,17 @@ respects the subscription being active.
 2. Open **SQL Editor → New query** and set up the database. You have two
    equivalent paths:
    - **Simplest:** run `schema.sql` once. It is the complete current schema
-       (version 6) and is safe on any database — fresh _or_ pre-existing. On an
-       older database it adds the missing columns and fixes the foreign keys; on a
-       fresh one it just builds everything.
-    - **Incremental:** on an existing database, run the migrations in numeric
-       order, once: `001_lock_down_rls.sql` → `002_chat_matchers.sql` →
-       `003_pending_input.sql` → `004_upgrade.sql` → `005_stage5.sql` →
-       `006_migrate_chat_merge.sql`.
+     (version 6) and is safe on any database — fresh _or_ pre-existing. On an
+     older database it adds the missing columns and fixes the foreign keys; on a
+     fresh one it just builds everything.
+   - **Incremental:** on an existing database, run the migrations in numeric
+     order, once: `001_lock_down_rls.sql` → `002_chat_matchers.sql` →
+     `003_pending_input.sql` → `004_upgrade.sql` → `005_stage5.sql` →
+     `006_migrate_chat_merge.sql`.
    - Migrations must be run in order and **once**. `002` and `003` are **not**
      re-runnable after `004` (004 replaces `chat_matchers` with a new return type,
-   and `CREATE OR REPLACE` cannot change a function's return type). `004`,
-   `005`, `006`, and `schema.sql` are safe to re-run.
+     and `CREATE OR REPLACE` cannot change a function's return type). `004`,
+     `005`, `006`, and `schema.sql` are safe to re-run.
 3. In **Settings → API**, copy:
    - Project URL → `SUPABASE_URL`
    - **service_role** key → `SUPABASE_KEY` (server-side only — never expose it)
@@ -63,15 +63,15 @@ respects the subscription being active.
 
 Copy `.env.example` to `.env` and fill it in:
 
-| Variable         | Required | Description                                               |
-| ---------------- | -------- | --------------------------------------------------------- |
-| `BOT_TOKEN`      | yes      | Token from BotFather                                      |
-| `SUPABASE_URL`   | yes      | `https://<project>.supabase.co`                           |
-| `SUPABASE_KEY`   | yes      | Supabase **service_role** key                             |
-| `DEBUG`          | no       | `true` logs message text to the console (default `false`) |
-| `AD_FILTER_MODE` | no       | `off`, `log` (default) or `drop` — see Ad filter below    |
-| `GROUP_NOTICE_MODE` | no    | `off`, `button` (default) or `auto` for group introductions |
-| `OWNER_ID`       | no       | Owner Telegram user id; enables owner-only `/stats`; unset or invalid disables it |
+| Variable            | Required | Description                                                                       |
+| ------------------- | -------- | --------------------------------------------------------------------------------- |
+| `BOT_TOKEN`         | yes      | Token from BotFather                                                              |
+| `SUPABASE_URL`      | yes      | `https://<project>.supabase.co`                                                   |
+| `SUPABASE_KEY`      | yes      | Supabase **service_role** key                                                     |
+| `DEBUG`             | no       | `true` logs message text to the console (default `false`)                         |
+| `AD_FILTER_MODE`    | no       | `off`, `log` (default) or `drop` — see Ad filter below                            |
+| `GROUP_NOTICE_MODE` | no       | `off`, `button` (default) or `auto` for group introductions                       |
+| `OWNER_ID`          | no       | Owner Telegram user id; enables owner-only `/stats`; unset or invalid disables it |
 
 `.env` is gitignored. Never commit it.
 
@@ -175,9 +175,9 @@ migrations/
   (which bypasses RLS) can read/write. Verify by running a `select` as the `anon`
   role — it returns nothing.
 - For matched messages, the bot stores a preview up to 200 characters, group name,
-   available link and matched keywords for 7 days, capped at 500 alerts per user.
-   Nothing is stored for messages that match nobody, and no media is stored.
+  available link and matched keywords for 7 days, capped at 500 alerts per user.
+  Nothing is stored for messages that match nobody, and no media is stored.
 - With `DEBUG=false` (default), message text is never written to server logs.
 - `GROUP_NOTICE_MODE=off` never posts an introduction. `button` gives a group
-   admin a private button to post it; `auto` posts it on first registration only.
-   Channels never receive introductions.
+  admin a private button to post it; `auto` posts it on first registration only.
+  Channels never receive introductions.
