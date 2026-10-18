@@ -70,7 +70,7 @@ Copy `.env.example` to `.env` and fill it in:
 | `DEBUG`          | no       | `true` logs message text to the console (default `false`) |
 | `AD_FILTER_MODE` | no       | `off`, `log` (default) or `drop` — see Ad filter below    |
 | `GROUP_NOTICE_MODE` | no    | `off`, `button` (default) or `auto` for group introductions |
-| `OWNER_ID`       | no       | Owner Telegram user id; enables owner-only `/stats`       |
+| `OWNER_ID`       | no       | Owner Telegram user id; enables owner-only `/stats`; unset or invalid disables it |
 
 `.env` is gitignored. Never commit it.
 
