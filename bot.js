@@ -28,6 +28,11 @@ const AD_FILTER_MODE = ["off", "log", "drop"].includes(
 )
   ? process.env.AD_FILTER_MODE.toLowerCase()
   : "log";
+const GROUP_NOTICE_MODE = ["off", "button", "auto"].includes(
+  (process.env.GROUP_NOTICE_MODE ?? "").toLowerCase(),
+)
+  ? process.env.GROUP_NOTICE_MODE.toLowerCase()
+  : "button";
 
 // Owner (Stage 2 startup warning, Stage 5 /stats). Optional.
 const OWNER_ID = process.env.OWNER_ID ? Number(process.env.OWNER_ID) : null;
@@ -884,6 +889,35 @@ const getAlertsButton = async (chatId) =>
     "👉 Get alerts from this group",
     await followDeepLink(chatId),
   );
+
+const getRegistrationButtons = async (chatId, includeNoticeButton) => {
+  const kb = await getAlertsButton(chatId);
+  if (includeNoticeButton) {
+    kb.row().text("📣 Post an intro in the group", `post_intro:${chatId}`);
+  }
+  return kb;
+};
+
+const postGroupNotice = async (chatId) => {
+  try {
+    await bot.api.sendMessage(chatId, GROUP_NOTICE_TEXT, {
+      reply_markup: await getAlertsButton(chatId),
+    });
+    const update = check(
+      "markNoticePosted",
+      await supabase
+        .from("groups")
+        .update({ notice_posted_at: new Date().toISOString() })
+        .eq("chat_id", chatId),
+    );
+    return !update.error;
+  } catch (error) {
+    console.error(
+      `[notice] could not post in ${chatId}: ${error?.description ?? error?.message ?? "unknown error"}`,
+    );
+    return false;
+  }
+};
 
 // "/start f_<chatId>" confirmation. Never reveals the title to a non-member.
 const showFollowConfirm = async (ctx, chatId) => {
@@ -1966,6 +2000,41 @@ bot.callbackQuery(/^sub:(-?\d+)$/, async (ctx) => {
   }
 });
 
+bot.callbackQuery(/^post_intro:(-?\d+)$/, async (ctx) => {
+  const chatId = Number(ctx.match[1]);
+  const { data: group } = check(
+    "findNoticeGroup",
+    await supabase
+      .from("groups")
+      .select("type, notice_posted_at")
+      .eq("chat_id", chatId)
+      .maybeSingle(),
+  );
+  if (!group || (group.type !== "group" && group.type !== "supergroup")) {
+    await answer(ctx, "That intro is only available for groups.");
+    return;
+  }
+
+  let member;
+  try {
+    member = await bot.api.getChatMember(chatId, ctx.from.id);
+  } catch {
+    await answer(ctx, "I couldn't verify your admin status.");
+    return;
+  }
+  if (member.status !== "creator" && member.status !== "administrator") {
+    await answer(ctx, "Only a group admin can post the intro.");
+    return;
+  }
+  if (group.notice_posted_at) {
+    await answer(ctx, "The intro was already posted.");
+    return;
+  }
+
+  const posted = await postGroupNotice(chatId);
+  await answer(ctx, posted ? "Intro posted in the group." : "I couldn't post the intro.");
+});
+
 // --- bot added to / removed from a group or channel ---
 bot.on("my_chat_member", async (ctx) => {
   const chat = ctx.chat;
@@ -1979,12 +2048,14 @@ bot.on("my_chat_member", async (ctx) => {
     await upsertUser(adder);
     const { data: existing, error } = await supabase
       .from("groups")
-      .select("chat_id")
+      .select("chat_id, notice_posted_at")
       .eq("chat_id", chat.id)
       .maybeSingle();
     if (error) console.error("[supabase:findGroup]", error.message);
 
-    const alertsKb = await getAlertsButton(chat.id);
+    const isNoticeableChat = chat.type === "group" || chat.type === "supergroup";
+    const includeNoticeButton = GROUP_NOTICE_MODE === "button" && isNoticeableChat;
+    const alertsKb = await getRegistrationButtons(chat.id, includeNoticeButton);
 
     if (existing) {
       check(
@@ -2021,18 +2092,8 @@ bot.on("my_chat_member", async (ctx) => {
         )
         .catch(() => {});
 
-      // First time only, and only real groups (not channels): a one-off notice.
-      if (chat.type === "group" || chat.type === "supergroup") {
-        try {
-          await bot.api.sendMessage(chat.id, GROUP_NOTICE_TEXT, {
-            reply_markup: alertsKb,
-          });
-        } catch (err) {
-          // Harmless if the bot cannot post (e.g. no permission).
-          console.error(
-            `[notice] could not post in ${chat.id}: ${err?.description ?? err?.message}`,
-          );
-        }
+      if (GROUP_NOTICE_MODE === "auto" && isNoticeableChat) {
+        await postGroupNotice(chat.id);
       }
     }
   }
