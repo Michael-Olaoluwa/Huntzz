@@ -44,16 +44,17 @@ respects the subscription being active.
 2. Open **SQL Editor → New query** and set up the database. You have two
    equivalent paths:
    - **Simplest:** run `schema.sql` once. It is the complete current schema
-   (version 6) and is safe on any database — fresh _or_ pre-existing. On an
-     older database it adds the missing columns and fixes the foreign keys; on a
-     fresh one it just builds everything.
-   - **Incremental:** on an existing database, run the migrations in numeric
-     order, once: `001_lock_down_rls.sql` → `002_chat_matchers.sql` →
-   `003_pending_input.sql` → `004_upgrade.sql` → `005_stage5.sql` → `006_migrate_chat_merge.sql`.
+       (version 6) and is safe on any database — fresh _or_ pre-existing. On an
+       older database it adds the missing columns and fixes the foreign keys; on a
+       fresh one it just builds everything.
+    - **Incremental:** on an existing database, run the migrations in numeric
+       order, once: `001_lock_down_rls.sql` → `002_chat_matchers.sql` →
+       `003_pending_input.sql` → `004_upgrade.sql` → `005_stage5.sql` →
+       `006_migrate_chat_merge.sql`.
    - Migrations must be run in order and **once**. `002` and `003` are **not**
      re-runnable after `004` (004 replaces `chat_matchers` with a new return type,
-     and `CREATE OR REPLACE` cannot change a function's return type). `004` and
-     `schema.sql` are both safe to re-run.
+   and `CREATE OR REPLACE` cannot change a function's return type). `004`,
+   `005`, `006`, and `schema.sql` are safe to re-run.
 3. In **Settings → API**, copy:
    - Project URL → `SUPABASE_URL`
    - **service_role** key → `SUPABASE_KEY` (server-side only — never expose it)
@@ -82,6 +83,12 @@ npm start        # or: node bot.js
 ```
 
 Node.js **20 or newer** is required.
+
+Run the dependency-free test suite with:
+
+```bash
+npm test
+```
 
 ---
 
@@ -126,8 +133,8 @@ worker process**.
 ### Railway
 
 1. New Project → Deploy from GitHub (this repo).
-2. Add the three variables (`BOT_TOKEN`, `SUPABASE_URL`, `SUPABASE_KEY`; optionally
-   `DEBUG`, `AD_FILTER_MODE`).
+2. Add the required variables (`BOT_TOKEN`, `SUPABASE_URL`, `SUPABASE_KEY`) and,
+   when needed, `DEBUG`, `AD_FILTER_MODE`, `GROUP_NOTICE_MODE`, and `OWNER_ID`.
 3. Railway runs `npm start` (from `package.json`). Ensure there is exactly one
    instance, since two pollers would conflict.
 
@@ -147,7 +154,9 @@ worker process**.
 ## Project layout
 
 ```
-bot.js                        # the whole bot
+bot.js                        # the Telegram/Supabase integration
+lib.js                        # side-effect-free helpers
+test/lib.test.js              # node:test coverage for pure helpers
 schema.sql                    # complete current schema (version 6) — fresh installs run this
 migrations/
   001_lock_down_rls.sql       # RLS on, all permissive policies dropped
@@ -169,3 +178,6 @@ migrations/
    available link and matched keywords for 7 days, capped at 500 alerts per user.
    Nothing is stored for messages that match nobody, and no media is stored.
 - With `DEBUG=false` (default), message text is never written to server logs.
+- `GROUP_NOTICE_MODE=off` never posts an introduction. `button` gives a group
+   admin a private button to post it; `auto` posts it on first registration only.
+   Channels never receive introductions.
