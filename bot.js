@@ -4,7 +4,22 @@ import { createHash } from "node:crypto";
 import { createClient } from "@supabase/supabase-js";
 import { autoRetry } from "@grammyjs/auto-retry";
 import { apiThrottler } from "@grammyjs/transformer-throttler";
-import { fetchMembership } from "./lib.js";
+import {
+  ALERT_PREVIEW_LEN,
+  ALERT_RETENTION_DAYS,
+  MAX_ALERTS_PER_USER,
+  MAX_KEYWORD_LENGTH,
+  buildPrivacyText,
+  cleanKeyword,
+  escapeHtml,
+  fetchMembership,
+  keywordError,
+  looksLikeAd,
+  matchesKeyword,
+  messageLink,
+  shouldSkipDM,
+  truncatePreview,
+} from "./lib.js";
 
 process.on("unhandledRejection", () => {
   console.error("[process] unhandled rejection");
@@ -143,44 +158,6 @@ const upsertUser = async (user) => {
   return !existing; // true the first time we see this user (Stage 5 onboarding)
 };
 
-// --- keyword normalization + whole-word matching (Stage 2) ---
-const MAX_KEYWORD_LENGTH = 40;
-const WORD_CHAR = /[\p{L}\p{N}]/u;
-const escapeRegex = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-
-const normalizeKeyword = (raw) => raw.trim().replace(/\s+/g, " ").toLowerCase();
-
-// Trim/lowercase/collapse whitespace, then cap at 40 characters.
-const cleanKeyword = (raw) => {
-  const normalized = normalizeKeyword(raw);
-  return {
-    keyword: normalized.slice(0, MAX_KEYWORD_LENGTH),
-    truncated: normalized.length > MAX_KEYWORD_LENGTH,
-  };
-};
-
-// A keyword must contain at least one letter or number (rejects empty/punctuation-only).
-const keywordError = (keyword) => {
-  if (!keyword) return "That looks empty — send a word or phrase to watch for.";
-  if (!WORD_CHAR.test(keyword))
-    return "A keyword needs at least one letter or number (punctuation alone won't work).";
-  return null;
-};
-
-// Compiled regexes keyed by keyword. Whole-word/phrase: no letter or digit
-// immediately before or after, case-insensitive, Unicode-aware. Spaces in a
-// phrase match any run of whitespace, so "class cancelled" survives stray spaces.
-const keywordRegexCache = new Map();
-const keywordRegex = (keyword) => {
-  let re = keywordRegexCache.get(keyword);
-  if (!re) {
-    const pattern = escapeRegex(keyword).replace(/\s+/g, "\\s+");
-    re = new RegExp(`(?<![\\p{L}\\p{N}])${pattern}(?![\\p{L}\\p{N}])`, "iu");
-    keywordRegexCache.set(keyword, re);
-  }
-  return re;
-};
-
 // --- per-chat matcher cache (Stage 2) ---
 // One RPC loads every (subscriber, keyword) pair for a chat; cached briefly so a
 // busy group cannot hammer Supabase. Invalidated on any subscription/keyword change.
@@ -217,7 +194,7 @@ const getChatMatchers = async (chatId) => {
 
 // --- membership cache (Stage 2) ---
 // My groups may only reveal chats the user is actually in. We ask Telegram
-// getChatMember once per (user, chat) and cache for 5 minutes. A failed lookup
+// getChatMember once per (user, chat) and cache for 10 minutes. A failed lookup
 // is treated as "not a member" (never shown), which also avoids leaking titles.
 const MEMBERSHIP_CACHE_TTL_MS = 10 * 60 * 1000;
 const membershipCache = new Map(); // `${userId}:${chatId}` -> { expires, isMember }
@@ -502,18 +479,6 @@ bot.use(async (ctx, next) => {
   return next();
 });
 
-// ===== Ad filter patterns (Stage 4) — tune me =====
-const AD_PATTERNS = [
-  /t\.me\/\+/i, // t.me/+ invite links
-  /t\.me\/joinchat/i, // legacy invite links
-  /join (our|my|the) (channel|group)/i,
-  /subscribe (to|now)/i,
-  /click (the )?link/i,
-];
-// ==================================================
-
-const looksLikeAd = (text) => AD_PATTERNS.some((re) => re.test(text));
-
 // Admin ids per chat, cached for 10 minutes (used to exempt admins in drop mode).
 const ADMIN_CACHE_TTL_MS = 10 * 60 * 1000;
 const adminCache = new Map(); // chatId -> { expires, ids: Set<userId> }
@@ -573,23 +538,6 @@ const shouldDropForAd = async (chat, text, senderId) => {
   return true;
 };
 
-// --- matching + delivery ---
-// Escape user-derived text so an alert can never break or inject HTML.
-const escapeHtml = (s) =>
-  String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
-
-// Deep link to the original message. The t.me/c/<id> form only opens for members
-// of that chat; it works for supergroups and channels, not plain groups.
-const messageLink = (chat, messageId) => {
-  if (!messageId) return null;
-  if (chat.username) return `https://t.me/${chat.username}/${messageId}`;
-  if (chat.type === "supergroup" || chat.type === "channel") {
-    const id = String(chat.id).replace(/^-100/, "");
-    return `https://t.me/c/${id}/${messageId}`;
-  }
-  return null;
-};
-
 // --- alerts + inbox helpers (Stage 4) ---
 // Buckets are keyed by the keyword string, but callbacks carry only a short,
 // stable hash (callback data must stay tiny). At read time we resolve the hash
@@ -597,9 +545,6 @@ const messageLink = (chat, messageId) => {
 const keywordHash = (keyword) =>
   createHash("sha1").update(keyword).digest("hex").slice(0, 10);
 
-const ALERT_PREVIEW_LEN = 200;
-const ALERT_RETENTION_DAYS = 7;
-const MAX_ALERTS_PER_USER = 500;
 const ALERTS_PER_PAGE = 5;
 
 const timeAgo = (iso) => {
@@ -614,35 +559,6 @@ const timeAgo = (iso) => {
   if (h < 24) return `${h}h ago`;
   return `${Math.floor(h / 24)}d ago`;
 };
-
-const isPaused = (matcher) =>
-  matcher.pausedUntil != null &&
-  new Date(matcher.pausedUntil).getTime() > Date.now();
-
-// Quiet hours in the user's timezone. Hours are 0-23 and the window may wrap
-// past midnight (e.g. 22 -> 6).
-const inQuietHours = (matcher) => {
-  if (matcher.quietStart == null || matcher.quietEnd == null) return false;
-  const s = matcher.quietStart;
-  const e = matcher.quietEnd;
-  if (s === e) return false;
-  let hour;
-  try {
-    hour = Number(
-      new Intl.DateTimeFormat("en-US", {
-        hour: "2-digit",
-        hourCycle: "h23",
-        timeZone: matcher.tz || "Africa/Lagos",
-      }).format(new Date()),
-    );
-  } catch {
-    return false;
-  }
-  return s < e ? hour >= s && hour < e : hour >= s || hour < e;
-};
-
-// Paused or quiet hours: still save the alert to the inbox, just don't ping.
-const shouldSkipDM = (matcher) => isPaused(matcher) || inQuietHours(matcher);
 
 // Keep only the newest MAX_ALERTS_PER_USER rows for a user.
 const enforceAlertCap = async (userId) => {
@@ -746,17 +662,14 @@ const matchAndDeliver = async (
   }
 
   // Store a short raw preview (<= 200 chars). Escaped only when displayed.
-  const preview =
-    text.length > ALERT_PREVIEW_LEN
-      ? text.slice(0, ALERT_PREVIEW_LEN) + "…"
-      : text;
+  const preview = truncatePreview(text, ALERT_PREVIEW_LEN);
   const link = messageLink(chat, messageId);
 
   const hits = new Map(); // userId -> { words: string[], matcher, adminPost }
   for (const [userId, matcher] of byUser) {
     if (userId === senderId) continue; // never alert a user about their own message
     const matched = matcher.keywords.filter((keyword) =>
-      keywordRegex(keyword).test(text),
+      matchesKeyword(text, keyword),
     );
     if (matched.length)
       hits.set(userId, { words: matched, matcher, adminPost: false });
@@ -867,20 +780,7 @@ const HELP_TEXT = [
   "Tip: to never miss an alert, mute noisy groups and give this chat a special sound. Tap “🔊 Make alerts loud” on the setup screen for steps.",
 ].join("\n");
 
-const PRIVACY_TEXT = [
-  "<b>Privacy</b>",
-  "",
-  "• I read messages only where I’ve been added, and only to check them against members’ keywords.",
-  `• For each match, I store a short preview (up to ${ALERT_PREVIEW_LEN} characters), the group name, a link when available, and the matched keywords for ${ALERT_RETENTION_DAYS} days so your inbox works.`,
-  `• I store at most ${MAX_ALERTS_PER_USER} alerts per user. Alerts for a group are deleted when you unfollow it or leave it.`,
-  "• Nothing is stored for messages that match nobody, and no media is stored.",
-  "• I store user ids, group ids, and the keywords you set. This data lives in a database run by the bot’s owner.",
-  "• You can clear your inbox or erase everything with /deleteme.",
-  "• Any group admin can remove me from a group at any time; that stops all reading there.",
-  "• Server logs contain message text only when the owner turns on debug mode.",
-  "",
-  "Questions? Message me here anytime.",
-].join("\n");
+const PRIVACY_TEXT = buildPrivacyText();
 
 // Posted once, inside a group/supergroup, the first time it is registered.
 const GROUP_NOTICE_TEXT =
