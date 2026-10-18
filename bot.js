@@ -598,6 +598,7 @@ const keywordHash = (keyword) =>
   createHash("sha1").update(keyword).digest("hex").slice(0, 10);
 
 const ALERT_PREVIEW_LEN = 200;
+const ALERT_RETENTION_DAYS = 7;
 const MAX_ALERTS_PER_USER = 500;
 const ALERTS_PER_PAGE = 5;
 
@@ -661,7 +662,7 @@ const enforceAlertCap = async (userId) => {
 };
 
 // Alerts live for 7 days (Stage 4 retention). Run at startup and hourly.
-const ALERT_TTL_MS = 7 * 24 * 60 * 60 * 1000;
+const ALERT_TTL_MS = ALERT_RETENTION_DAYS * 24 * 60 * 60 * 1000;
 const purgeOldAlerts = async () => {
   const cutoff = new Date(Date.now() - ALERT_TTL_MS).toISOString();
   check(
@@ -862,18 +863,21 @@ const HELP_TEXT = [
   "/deleteme — delete my data",
   "/cancel — stop adding a word",
   "",
+  `Inbox matches keep a ${ALERT_PREVIEW_LEN}-character preview for ${ALERT_RETENTION_DAYS} days, with up to ${MAX_ALERTS_PER_USER} alerts per user.`,
   "Tip: to never miss an alert, mute noisy groups and give this chat a special sound. Tap “🔊 Make alerts loud” on the setup screen for steps.",
 ].join("\n");
 
-// Keep this accurate: the bot stores no message text (messages are scanned in
-// memory only). It stores user ids, chat ids and keywords.
 const PRIVACY_TEXT = [
   "<b>Privacy</b>",
   "",
-  "• I read messages only in groups and channels where I’ve been added, and only to check them against members’ keywords.",
-  "• I do not store message text — messages are scanned in memory and then discarded.",
-  "• I store user ids, group/channel ids, and the keywords you set.",
+  "• I read messages only where I’ve been added, and only to check them against members’ keywords.",
+  `• For each match, I store a short preview (up to ${ALERT_PREVIEW_LEN} characters), the group name, a link when available, and the matched keywords for ${ALERT_RETENTION_DAYS} days so your inbox works.`,
+  `• I store at most ${MAX_ALERTS_PER_USER} alerts per user. Alerts for a group are deleted when you unfollow it or leave it.`,
+  "• Nothing is stored for messages that match nobody, and no media is stored.",
+  "• I store user ids, group ids, and the keywords you set. This data lives in a database run by the bot’s owner.",
+  "• You can clear your inbox or erase everything with /deleteme.",
   "• Any group admin can remove me from a group at any time; that stops all reading there.",
+  "• Server logs contain message text only when the owner turns on debug mode.",
   "",
   "Questions? Message me here anytime.",
 ].join("\n");
@@ -881,7 +885,7 @@ const PRIVACY_TEXT = [
 // Posted once, inside a group/supergroup, the first time it is registered.
 const GROUP_NOTICE_TEXT =
   "Hi! I'm Huntzz. I let members get a private alert when a word they chose is posted here. " +
-  "I only check messages against members' keywords and keep short previews of matches for 7 days. " +
+  `I only check messages against members' keywords and keep previews up to ${ALERT_PREVIEW_LEN} characters for ${ALERT_RETENTION_DAYS} days. ` +
   "Tap below to get alerts, or send /privacy to me in private.";
 
 const getAlertsButton = async (chatId) =>

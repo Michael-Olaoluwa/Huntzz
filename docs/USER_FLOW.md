@@ -21,7 +21,7 @@ Key facts:
 - Runs on **long polling** (no web server / webhook). `bot.start({ allowed_updates: ["message", "channel_post", "my_chat_member", "callback_query"] })`.
 - Single file: `bot.js` (Node.js ESM, grammY 1.46, Supabase).
 - Storage: Supabase Postgres. Users, groups, subscriptions, keywords and pending
-  input are stored; **message text is never stored**.
+  input and matched-message previews are stored; unmatched message text is not stored.
 - The bot only acts in **private chats** for commands and menus. In groups/channels
   it is a passive reader (it never replies in a group).
 - There is **no role system**: any user can add the bot, any member can subscribe,
@@ -407,8 +407,12 @@ Setup so you never miss an alert
 Privacy
 
 • I read messages only in groups and channels where I’ve been added, and only to check them against members’ keywords.
-• I do not store message text — messages are scanned in memory and then discarded.
-• I store user ids, group/channel ids, and the keywords you set.
+• For each match, I store a preview up to 200 characters, the group name, a link when available, and matched keywords for 7 days so the inbox works.
+• I store at most 500 alerts per user. Alerts for a group are deleted when you unfollow it or leave it.
+• Nothing is stored for messages that match nobody, and no media is stored.
+• I store user ids, group ids, and the keywords you set. This data lives in a database run by the bot's owner.
+• You can clear your inbox or erase everything with /deleteme.
+• Server logs contain message text only when the owner turns on debug mode.
 • Any group admin can remove me from a group at any time; that stops all reading there.
 
 Questions? Message me here anytime.
@@ -446,7 +450,7 @@ Questions? Message me here anytime.
 - Recover a pending keyword entry that expired (> 10 min) — the message is silently dropped.
 - Alert on edits to already-posted messages (only brand-new messages are processed).
 - Tell a user "the bot isn't in this group" beyond the "not registered"/membership toasts.
-- Store or show back message text (by design). It also stores no message history.
+- Store or show unmatched message text, or store media. Matched messages have only the short inbox preview described above.
 - Enforce who may register a chat — any admin of any chat can add it.
 
 ---
@@ -469,8 +473,8 @@ Questions? Message me here anytime.
 | Unsubscribe-all                                              | every `subscriptions.active = false` for the user                | Keywords retained.                                                   |
 | Alert sent, user blocked the bot (403)                       | `users.blocked = true`                                           | Excluded from future matching.                                       |
 
-**Never stored:** the text of any group/channel message, and any media. The only
-per-message data touched is scanned **in memory** and discarded.
+**Never stored:** unmatched message text and media. Matched messages retain only the
+short preview and metadata needed by the inbox for seven days.
 
 Tables created by the schema/migrations: `users`, `groups`, `subscriptions`,
 `keywords`, `pending_input`, `alerts`, and `stats_daily`. All have RLS **enabled** with **no policies**; only the
