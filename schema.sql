@@ -1,14 +1,14 @@
--- Huntzz — complete schema, VERSION 4 (current).
+-- Huntzz — complete schema, VERSION 5 (current).
 --
 -- This single file is safe to run on ANY database, fresh or pre-existing, and
--- brings it to version 4. It contains everything from migrations 001–004: RLS
+-- brings it to version 5. It contains everything from migrations 001–005: RLS
 -- lockdown, pending_input, cascade rules, alerts, stats, inbox RPCs and the
 -- current chat_matchers. On a pre-existing database it adds any missing columns
 -- and normalises foreign keys; on a fresh database it does the same, once.
 --
 -- You therefore have two equivalent upgrade paths:
 --   * run THIS file, or
---   * run migrations 001 -> 002 -> 003 -> 004 in numeric order, once.
+--   * run migrations 001 -> 002 -> 003 -> 004 -> 005 in numeric order, once.
 -- Do NOT mix-and-match in a way that re-runs 002/003 after 004: those two are
 -- not re-runnable after 004 (004 replaces public.chat_matchers(bigint) with a
 -- new return type, and CREATE OR REPLACE cannot change a return type).
@@ -194,6 +194,26 @@ alter table public.stats_daily   enable row level security;
 
 create index if not exists alerts_user_created_idx on public.alerts (user_id, created_at desc);
 create index if not exists alerts_user_read_idx    on public.alerts (user_id, is_read);
+
+-- One alert per recipient and Telegram message. Plain-group messages have a
+-- message_id too; null is excluded only for legacy/manual rows.
+with duplicates as (
+  select id,
+         row_number() over (
+           partition by user_id, chat_id, message_id
+           order by created_at desc, id desc
+         ) as copy_number
+  from public.alerts
+  where message_id is not null
+)
+delete from public.alerts a
+using duplicates d
+where a.id = d.id
+  and d.copy_number > 1;
+
+create unique index if not exists alerts_user_chat_message_uidx
+  on public.alerts (user_id, chat_id, message_id)
+  where message_id is not null;
 
 -- ===========================================================================
 -- Functions / RPCs

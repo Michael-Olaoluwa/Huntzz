@@ -49,15 +49,15 @@ flowchart TD
 
 ## 2. ACTORS AND ROLES
 
-| Actor | How they appear in code | What they can do |
-| --- | --- | --- |
-| **Chat adder** (`my_chat_member.from`) | The account that adds the bot to a group/channel. Stored as `groups.added_by` and upserted into `users`. | Gets a private confirmation DM. Otherwise no special powers. |
-| **Member / subscriber** (any user who opens the bot in private) | Rows in `users`, `subscriptions`, `keywords`, `pending_input`. | Subscribe/unsubscribe per chat, add/remove keywords, receive alerts. |
-| **Non-subscriber member** | Upserted into `users` on any private interaction; may also be created when they add the bot or subscribe. | Nothing until they subscribe. Still stored. |
-| **Group/channel admin** | Not stored as such — only detected live via `getChatAdministrators` (cached 10 min) for the ad filter. | Exempt from "drop"-mode ad filtering. |
-| **Channel** | `groups.type = "channel"`. | Treated as always-admin for the ad filter; sender name unavailable. |
-| **The bot itself** | `ctx.me.id`. | Ignored by the matcher (won't alert on its own messages). |
-| **The operator/developer** | Owns the token, Supabase project and the single running process. | Configures env vars, runs migrations, deploys. |
+| Actor                                                           | How they appear in code                                                                                   | What they can do                                                     |
+| --------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------- |
+| **Chat adder** (`my_chat_member.from`)                          | The account that adds the bot to a group/channel. Stored as `groups.added_by` and upserted into `users`.  | Gets a private confirmation DM. Otherwise no special powers.         |
+| **Member / subscriber** (any user who opens the bot in private) | Rows in `users`, `subscriptions`, `keywords`, `pending_input`.                                            | Subscribe/unsubscribe per chat, add/remove keywords, receive alerts. |
+| **Non-subscriber member**                                       | Upserted into `users` on any private interaction; may also be created when they add the bot or subscribe. | Nothing until they subscribe. Still stored.                          |
+| **Group/channel admin**                                         | Not stored as such — only detected live via `getChatAdministrators` (cached 10 min) for the ad filter.    | Exempt from "drop"-mode ad filtering.                                |
+| **Channel**                                                     | `groups.type = "channel"`.                                                                                | Treated as always-admin for the ad filter; sender name unavailable.  |
+| **The bot itself**                                              | `ctx.me.id`.                                                                                              | Ignored by the matcher (won't alert on its own messages).            |
+| **The operator/developer**                                      | Owns the token, Supabase project and the single running process.                                          | Configures env vars, runs migrations, deploys.                       |
 
 There is **no ownership model**: `groups.added_by` is recorded but never re-checked.
 Any member of a registered chat may subscribe to it (subject to a live
@@ -96,8 +96,9 @@ the migrations were actually applied to the live database are **UNVERIFIED** fro
 code.
 
 Env vars the process requires/reads: `BOT_TOKEN` (required, else exits), `SUPABASE_URL`
-+ `SUPABASE_KEY` (required, else exits), `DEBUG` (`"true"` enables text logging,
-default off), `AD_FILTER_MODE` (`off` | `log` | `drop`, default `log`).
+
+- `SUPABASE_KEY` (required, else exits), `DEBUG` (`"true"` enables text logging,
+  default off), `AD_FILTER_MODE` (`off` | `log` | `drop`, default `log`).
 
 ---
 
@@ -163,6 +164,7 @@ Tapping a group button (`sub:<chatId>`):
 3. The chat's matcher cache is invalidated and the **My groups** view is re-rendered.
 
 Notes:
+
 - A user may subscribe to a chat **even without that check being definitive** if the
   Telegram call succeeds but the user later leaves — the check is point-in-time only.
 - The **50-subscription cap counts active subscriptions only**.
@@ -176,7 +178,7 @@ Entry points: the `🔑 Keywords` button (`keywords_menu`) or `/keywords`.
 **Keywords menu** (`keywordsMenuView`) lists the user's categories by group:
 
 - It joins `subscriptions` → `groups` and keeps only rows where the **subscription is
-  active** *and* the **group is active**.
+  active** _and_ the **group is active**.
 - If none → text `You're not subscribed to any group yet. Open My groups and subscribe first.`
   with a `👥 My groups` button.
 - Otherwise one button per subscription: `🔑 <title>` (`kw:<chatId>`).
@@ -323,14 +325,19 @@ Keyword: {comma-separated matched keywords}
 
 ### Commands (all are no-ops outside private chats — the handlers return early)
 
-| Command | Where | Effect |
-| --- | --- | --- |
-| `/start` | private | Upserts user; shows main menu; first-timers also get `HELP_TEXT`. |
-| `/help` | private | Upserts user; shows `HELP_TEXT` + `⬅️ Back`. |
-| `/privacy` | private | Upserts user; shows `PRIVACY_TEXT` + `⬅️ Back`. |
-| `/keywords` | private | Upserts user; shows Keywords menu (group list). |
-| `/unsubscribeall` | private | Confirm flow to deactivate all subscriptions (keywords kept). |
-| `/cancel` | any | Clears pending input; replies only in private. |
+| Command           | Where   | Effect                                                            |
+| ----------------- | ------- | ----------------------------------------------------------------- |
+| `/start`          | private | Upserts user; shows main menu; first-timers also get `HELP_TEXT`. |
+| `/help`           | private | Upserts user; shows `HELP_TEXT` + `⬅️ Back`.                      |
+| `/privacy`        | private | Upserts user; shows `PRIVACY_TEXT` + `⬅️ Back`.                   |
+| `/keywords`       | private | Upserts user; shows Keywords menu (group list).                   |
+| `/unsubscribeall` | private | Confirm flow to deactivate all subscriptions (keywords kept).     |
+| `/pause [hours]`  | private | Pause alerts for 1 to 720 hours.                                  |
+| `/resume`         | private | Clear the user's pause.                                           |
+| `/quiet HH HH`    | private | Set timezone-aware quiet hours.                                   |
+| `/quietoff`       | private | Clear quiet hours.                                                |
+| `/deleteme`       | private | Confirm and permanently delete the user's data.                   |
+| `/cancel`         | any     | Clears pending input; replies only in private.                    |
 
 Note: the audit brief mentioned a `/mygroups` command — **there is no `/mygroups`
 command in the code.** "My groups" exists only as the `👥 My groups` button
@@ -339,21 +346,24 @@ response** (silently ignored).
 
 ### Callback buttons
 
-| Button label (exact) | Callback data | What it does |
-| --- | --- | --- |
-| `➕ Add me to a group` | URL `https://t.me/<bot_username>?startgroup=true` | Opens Telegram's add-to-group picker. |
-| `👥 My groups` | `my_groups` | Renders My groups. |
-| `🔑 Keywords` | `keywords_menu` | Renders Keywords menu. |
-| `❓ Help` | `help_menu` | Edits message to `HELP_TEXT` + Back. |
-| `🔒 Privacy` | `privacy_menu` | Edits message to `PRIVACY_TEXT` + Back. |
-| `⬅️ Back` | `start_menu` | Edits back to the main menu. |
-| `✅ <title>` / `➕ <title>` | `sub:<chatId>` | Subscribe / unsubscribe (with membership check). |
-| `🔑 <title>` | `kw:<chatId>` | Open Keywords for that group. |
-| `🗑 <keyword>` | `delkw:<chatId>:<id>` | Delete that keyword. |
-| `➕ Add keyword` | `addkw:<chatId>` | Start keyword entry (sets pending input). |
-| `👥 My groups` (empty-keywords view) | `my_groups` | Same as above. |
-| `✅ Yes, unsubscribe from <n>` | `unsuball_confirm` | Deactivate all subscriptions. |
-| `✖️ Cancel` | `unsuball_cancel` | Cancel unsubscribe-all. |
+| Button label (exact)                 | Callback data                                     | What it does                                           |
+| ------------------------------------ | ------------------------------------------------- | ------------------------------------------------------ |
+| `➕ Add me to a group`               | URL `https://t.me/<bot_username>?startgroup=true` | Opens Telegram's add-to-group picker.                  |
+| `👥 My groups`                       | `my_groups`                                       | Renders My groups.                                     |
+| `🔑 Keywords`                        | `keywords_menu`                                   | Renders Keywords menu.                                 |
+| `❓ Help`                            | `help_menu`                                       | Edits message to `HELP_TEXT` + Back.                   |
+| `🔒 Privacy`                         | `privacy_menu`                                    | Edits message to `PRIVACY_TEXT` + Back.                |
+| `⬅️ Back`                            | `start_menu`                                      | Edits back to the main menu.                           |
+| `✅ <title>` / `➕ <title>`          | `sub:<chatId>`                                    | Subscribe / unsubscribe (with membership check).       |
+| `🔑 <title>`                         | `kw:<chatId>`                                     | Open Keywords for that group.                          |
+| `🗑 <keyword>`                       | `delkw:<chatId>:<id>`                             | Delete that keyword.                                   |
+| `➕ Add keyword`                     | `addkw:<chatId>`                                  | Start keyword entry (sets pending input).              |
+| `📢 Admin posts: on/off`             | `adminposts:<chatId>`                             | Toggle alerts for admin posts without keyword matches. |
+| `🧰 Starter packs`                   | `packs:<chatId>`                                  | Show built-in keyword packs.                           |
+| Starter pack                         | `pack:<chatId>:<name>`                            | Add pack words, respecting the 20-word limit.          |
+| `👥 My groups` (empty-keywords view) | `my_groups`                                       | Same as above.                                         |
+| `✅ Yes, unsubscribe from <n>`       | `unsuball_confirm`                                | Deactivate all subscriptions.                          |
+| `✖️ Cancel`                          | `unsuball_cancel`                                 | Cancel unsubscribe-all.                                |
 
 Callback handlers answer the query (removing the loading spinner) and, on any
 `editMessageText` failure, fall back to sending a new message. All `answerCallbackQuery`
@@ -378,6 +388,11 @@ Commands
 /privacy — how your data is handled
 /keywords — manage keywords per group
 /unsubscribeall — stop following every group
+/pause [hours] — pause alerts
+/resume — resume alerts
+/quiet HH HH — set quiet hours
+/quietoff — clear quiet hours
+/deleteme — delete my data
 /cancel — cancel a pending keyword
 
 Setup so you never miss an alert
@@ -412,6 +427,11 @@ Questions? Message me here anytime.
   script, and match captions.
 - Send one DM per matching user, listing every matched keyword, with an HTML-escaped
   preview (≤ 300 chars) and a link when it can build one.
+- Optionally alert subscribers about admin posts even when no keyword matches, and offer
+  starter keyword packs.
+- Keep alerts in a seven-day inbox and suppress duplicate recipient/message rows.
+- Pause delivery temporarily or during timezone-aware quiet hours without losing inbox rows.
+- Let users permanently delete their account data with `/deleteme`.
 - Keep keywords across unsubscribe, and reactivate a subscription instantly.
 - Pause alerts for users who blocked it (403) and resume when they message again.
 - Skip edited messages, its own messages, and messages with no text/caption.
@@ -433,27 +453,27 @@ Questions? Message me here anytime.
 
 ## 10. DATA STORED PER STEP
 
-| Step | Table / column written | Notes |
-| --- | --- | --- |
-| Any private interaction (`/start`, `/help`, subscribe, etc.) | `users` (`user_id`, `username`, `first_name`, `blocked=false`) | Upsert; `blocked` is reset on every interaction. |
-| Bot added to a chat (first time) | `groups` (`chat_id`, `title`, `type`, `added_by`, `active=true`) | Also upserts the adder into `users`. |
-| Bot re-added to a known chat | `groups.active = true` | Title/type/added_by not refreshed. |
-| Bot removed / kicked | `groups.active = false` | Row, keywords and subscriptions retained. |
-| Subscribe (new) | `subscriptions` (`user_id`, `chat_id`, `active=true`) | Upsert on `(user_id, chat_id)`. |
-| Unsubscribe | `subscriptions.active = false` | Soft — keywords retained. |
-| Re-subscribe | `subscriptions.active = true` | No limit check. |
-| Tap "Add keyword" | `pending_input` (`user_id`, `action`, `chat_id`, `created_at`) | Upsert on `user_id`; one pending per user. |
-| Send keyword text (valid) | `keywords` (`user_id`, `chat_id`, `keyword`) | Upsert on `(user_id, chat_id, keyword)`; normalized/truncated first. |
-| Invalid/expired keyword text | `pending_input` row deleted | Nothing else written. |
-| Delete keyword | `keywords` row deleted | Scoped by id + user_id. |
-| Unsubscribe-all | every `subscriptions.active = false` for the user | Keywords retained. |
-| Alert sent, user blocked the bot (403) | `users.blocked = true` | Excluded from future matching. |
+| Step                                                         | Table / column written                                           | Notes                                                                |
+| ------------------------------------------------------------ | ---------------------------------------------------------------- | -------------------------------------------------------------------- |
+| Any private interaction (`/start`, `/help`, subscribe, etc.) | `users` (`user_id`, `username`, `first_name`, `blocked=false`)   | Upsert; `blocked` is reset on every interaction.                     |
+| Bot added to a chat (first time)                             | `groups` (`chat_id`, `title`, `type`, `added_by`, `active=true`) | Also upserts the adder into `users`.                                 |
+| Bot re-added to a known chat                                 | `groups.active = true`                                           | Title/type/added_by not refreshed.                                   |
+| Bot removed / kicked                                         | `groups.active = false`                                          | Row, keywords and subscriptions retained.                            |
+| Subscribe (new)                                              | `subscriptions` (`user_id`, `chat_id`, `active=true`)            | Upsert on `(user_id, chat_id)`.                                      |
+| Unsubscribe                                                  | `subscriptions.active = false`                                   | Soft — keywords retained.                                            |
+| Re-subscribe                                                 | `subscriptions.active = true`                                    | No limit check.                                                      |
+| Tap "Add keyword"                                            | `pending_input` (`user_id`, `action`, `chat_id`, `created_at`)   | Upsert on `user_id`; one pending per user.                           |
+| Send keyword text (valid)                                    | `keywords` (`user_id`, `chat_id`, `keyword`)                     | Upsert on `(user_id, chat_id, keyword)`; normalized/truncated first. |
+| Invalid/expired keyword text                                 | `pending_input` row deleted                                      | Nothing else written.                                                |
+| Delete keyword                                               | `keywords` row deleted                                           | Scoped by id + user_id.                                              |
+| Unsubscribe-all                                              | every `subscriptions.active = false` for the user                | Keywords retained.                                                   |
+| Alert sent, user blocked the bot (403)                       | `users.blocked = true`                                           | Excluded from future matching.                                       |
 
 **Never stored:** the text of any group/channel message, and any media. The only
 per-message data touched is scanned **in memory** and discarded.
 
 Tables created by the schema/migrations: `users`, `groups`, `subscriptions`,
-`keywords`, `pending_input`. All have RLS **enabled** with **no policies**; only the
+`keywords`, `pending_input`, `alerts`, and `stats_daily`. All have RLS **enabled** with **no policies**; only the
 `service_role` key (which bypasses RLS) can read/write. The RPC `chat_matchers` is
 **not** `SECURITY DEFINER`, so an `anon` caller sees nothing under RLS.
 
@@ -461,30 +481,30 @@ Tables created by the schema/migrations: `users`, `groups`, `subscriptions`,
 
 ## 11. FAILURE AND EDGE CASES
 
-| Situation | Actual behavior | Source |
-| --- | --- | --- |
-| Missing `BOT_TOKEN` / Supabase vars at startup | Process logs an error and `process.exit(1)`. | `bot.js:7-14` |
-| Privacy mode **not** disabled (group) | Bot receives no normal group messages → no alerts. Silent. | **UNVERIFIED** (Telegram-side) |
-| Bot not admin in a channel | Cannot read channel posts → no alerts. | **UNVERIFIED** (Telegram-side) |
-| Keyword sent with no pending input | Silently ignored (no error, no reply). | `bot.js:735-736` |
-| Pending keyword expired (> 10 min) | Row deleted, message silently ignored, user must tap **Add keyword** again. | `bot.js:261-264, 736` |
-| Invalid keyword (empty / punctuation-only) | Error reply; pending row already cleared, so user must tap **Add keyword** again. | `bot.js:741-745, 738` |
-| Keyword > 40 chars | Saved truncated; reply appends ` (trimmed to 40 characters)`. | `bot.js:71-77, 789` |
-| 21st keyword for a group (new) | Rejected with the limit message; re-saving an existing keyword is allowed. | `bot.js:758-773` |
-| 51st active subscription | Toast `You can follow at most 50 groups. Unsubscribe from one first.` | `bot.js:656-661` |
-| Subscribe to a chat you've left | `getChatMember` returns `left`/`kicked` → toast `You're not a member of that group anymore.` | `bot.js:622-627` |
-| `getChatMember` API error | Toast `I couldn't verify your membership in that group.` | `bot.js:613-620` |
-| Tap a group button for a chat with no subscription after leaving | View re-renders; no row created. | `bot.js:629-679` |
-| Alert send fails (not 403) | Logged without text; no retry beyond `autoRetry`'s 429 handling. | `bot.js:370-373` |
-| Alert send gets 403 | User `blocked=true`; excluded from matching until they message the bot. | `bot.js:365-369` |
-| `chat_matchers` RPC error | Returns an empty map → no alerts delivered for that message. | `bot.js:113-117` |
-| `getChatAdministrators` fails in `drop` mode | Sender treated as non-admin → ad may be dropped. | `bot.js:300-303` |
-| Plain (non-super) group message matches | No link line (link is `null`); preview + keyword still delivered. | `bot.js:332-340` |
-| Message edited to add a keyword later | No update processed (`edited_message` not allowed) → no alert. | `bot.js:848` |
-| Command typed in a group | Ignored (handlers require private chat). | `bot.js:436` etc. |
-| Two bot instances polling same token | Updates fight between pollers; README warns to run exactly one. | README |
-| Stale callback tap (message gone) | `editMessageText` fails → falls back to a new message; query always answered. | `bot.js:455-479` |
-| `bot.stop()` fails on shutdown | Error logged, still exits 0. | `bot.js:835-843` |
+| Situation                                                        | Actual behavior                                                                              | Source                         |
+| ---------------------------------------------------------------- | -------------------------------------------------------------------------------------------- | ------------------------------ |
+| Missing `BOT_TOKEN` / Supabase vars at startup                   | Process logs an error and `process.exit(1)`.                                                 | `bot.js:7-14`                  |
+| Privacy mode **not** disabled (group)                            | Bot receives no normal group messages → no alerts. Silent.                                   | **UNVERIFIED** (Telegram-side) |
+| Bot not admin in a channel                                       | Cannot read channel posts → no alerts.                                                       | **UNVERIFIED** (Telegram-side) |
+| Keyword sent with no pending input                               | Silently ignored (no error, no reply).                                                       | `bot.js:735-736`               |
+| Pending keyword expired (> 10 min)                               | Row deleted, message silently ignored, user must tap **Add keyword** again.                  | `bot.js:261-264, 736`          |
+| Invalid keyword (empty / punctuation-only)                       | Error reply; pending row already cleared, so user must tap **Add keyword** again.            | `bot.js:741-745, 738`          |
+| Keyword > 40 chars                                               | Saved truncated; reply appends ` (trimmed to 40 characters)`.                                | `bot.js:71-77, 789`            |
+| 21st keyword for a group (new)                                   | Rejected with the limit message; re-saving an existing keyword is allowed.                   | `bot.js:758-773`               |
+| 51st active subscription                                         | Toast `You can follow at most 50 groups. Unsubscribe from one first.`                        | `bot.js:656-661`               |
+| Subscribe to a chat you've left                                  | `getChatMember` returns `left`/`kicked` → toast `You're not a member of that group anymore.` | `bot.js:622-627`               |
+| `getChatMember` API error                                        | Toast `I couldn't verify your membership in that group.`                                     | `bot.js:613-620`               |
+| Tap a group button for a chat with no subscription after leaving | View re-renders; no row created.                                                             | `bot.js:629-679`               |
+| Alert send fails (not 403)                                       | Logged without text; no retry beyond `autoRetry`'s 429 handling.                             | `bot.js:370-373`               |
+| Alert send gets 403                                              | User `blocked=true`; excluded from matching until they message the bot.                      | `bot.js:365-369`               |
+| `chat_matchers` RPC error                                        | Returns an empty map → no alerts delivered for that message.                                 | `bot.js:113-117`               |
+| `getChatAdministrators` fails in `drop` mode                     | Sender treated as non-admin → ad may be dropped.                                             | `bot.js:300-303`               |
+| Plain (non-super) group message matches                          | No link line (link is `null`); preview + keyword still delivered.                            | `bot.js:332-340`               |
+| Message edited to add a keyword later                            | No update processed (`edited_message` not allowed) → no alert.                               | `bot.js:848`                   |
+| Command typed in a group                                         | Ignored (handlers require private chat).                                                     | `bot.js:436` etc.              |
+| Two bot instances polling same token                             | Updates fight between pollers; README warns to run exactly one.                              | README                         |
+| Stale callback tap (message gone)                                | `editMessageText` fails → falls back to a new message; query always answered.                | `bot.js:455-479`               |
+| `bot.stop()` fails on shutdown                                   | Error logged, still exits 0.                                                                 | `bot.js:835-843`               |
 
 ---
 
@@ -546,54 +566,51 @@ the bot; migrations applied to the live DB; exactly one bot instance running;
 - **Plain groups get no "Open message" link.** `messageLink` returns `null` for
   `chat.type === "group"`, so the headline feature (jump to the message) silently
   disappears in every ordinary group, including the project's own test group.
-  *Fix: either document "supergroups only" prominently, or emit the `t.me/c/…` form for
-  `group` chats too and let Telegram degrade gracefully.*
+  _Fix: either document "supergroups only" prominently, or emit the `t.me/c/…` form for
+  `group` chats too and let Telegram degrade gracefully._
 - **Privacy mode is a silent make-or-break toggle.** If it isn't disabled, the bot
   receives no group text and simply never alerts — there is no self-check or warning.
-  *Fix: on registration, the bot could post its own capability status only to the adder,
-  or document a `getMe`/`can_read_all_group_messages` check at startup.*
+  _Fix: on registration, the bot could post its own capability status only to the adder,
+  or document a `getMe`/`can_read_all_group_messages` check at startup._
 - **Members don't know the bot exists.** Silent registration means nothing is posted in
   the group, so non-admins have no in-chat cue to open the bot and subscribe.
-  *Fix: provide an opt-in "post a one-time intro in the group" setting or an
-  admin-triggered announce command.*
+  _Fix: provide an opt-in "post a one-time intro in the group" setting or an
+  admin-triggered announce command._
 
 ### Medium
 
-- **Expired/invalid keyword entry requires restarting the flow.** The pending row is
-  cleared before validation, so an invalid keyword or a >10-min pause drops the user to
-  the previous screen with no clear "start over" affordance.
-  *Fix: keep the pending row on validation failure, or reply with an `➕ Add keyword`
-  button so one tap resumes.*
+- **Expired keyword entry requires restarting the flow.** An entry older than 10 minutes
+  is discarded and the user must tap `➕ Add a word` again.
 - **No `/mygroups` command** despite the audit brief naming one; discovery depends on the
   inline button, and `/start` must be re-issued to return to the menu.
-  *Fix: add slash-command aliases (`/mygroups`, `/grp`) that map to the existing views.*
+  _Fix: add slash-command aliases (`/mygroups`, `/grp`) that map to the existing views._
 - **Unanswered plain DMs.** If a user sends a keyword or any text with no pending action,
   the bot is totally silent — it looks broken.
-  *Fix: reply with a short "I didn't expect that — here's the menu" fallback (or ignore
-  only known commands, with a `/help` hint otherwise).*
+  _Fix: reply with a short "I didn't expect that — here's the menu" fallback (or ignore
+  only known commands, with a `/help` hint otherwise)._
 - **Ad filter false positives in `drop` mode.** Patterns like `subscribe (to|now)` match
   innocent phrases, and the 10-minute admin cache can misclassify a freshly promoted
   admin.
-  *Fix: default to `log`, surface dropped-message counts to the operator, and shorten the
-  admin cache TTL.*
+  _Fix: default to `log`, surface dropped-message counts to the operator, and shorten the
+  admin cache TTL._
 - **Channel alerts have no sender and no admin exemption nuance.** Channel posts always
-  skip the ad filter (treated as admin), so spam posted *to* a channel is still alerted.
-  *Fix: make the channel-exempt rule configurable.*
+  skip the ad filter (treated as admin), so spam posted _to_ a channel is still alerted.
+  _Fix: make the channel-exempt rule configurable._
 
 ### Low
 
 - **Misleading "already registered" message** doesn't state whether the chat is active.
-  *Fix: append the current active state.*
+  _Fix: append the current active state._
 - **Self-match silence.** A user posting their own keyword gets nothing, which can read as
-  a bug. *Fix: mention this behavior in `HELP_TEXT`.*
+  a bug. _Fix: mention this behavior in `HELP_TEXT`._
 - **`/cancel` in a group** clears state but sends no acknowledgement.
-  *Fix: always confirm, or never clear outside private.*
-- **Group titles in alerts aren't links.** *Fix: wrap the title in the message link when
-  available.*
+  _Fix: always confirm, or never clear outside private._
+- **Group titles in alerts aren't links.** _Fix: wrap the title in the message link when
+  available._
 - **Keyword `error.message` is surfaced raw** to the user on a save failure, which may
-  leak Postgres/Supabase wording. *Fix: show a generic message and log the detail.*
+  leak Postgres/Supabase wording. _Fix: show a generic message and log the detail._
 - **`getPending` failure is swallowed** (returns `null`), so a DB hiccup silently drops
-  keyword entry. *Fix: distinguish "no pending" from "lookup failed" and inform the user.*
+  keyword entry. _Fix: distinguish "no pending" from "lookup failed" and inform the user._
 
 ---
 

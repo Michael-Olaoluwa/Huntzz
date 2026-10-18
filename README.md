@@ -44,12 +44,12 @@ respects the subscription being active.
 2. Open **SQL Editor → New query** and set up the database. You have two
    equivalent paths:
    - **Simplest:** run `schema.sql` once. It is the complete current schema
-     (version 4) and is safe on any database — fresh *or* pre-existing. On an
+     (version 5) and is safe on any database — fresh _or_ pre-existing. On an
      older database it adds the missing columns and fixes the foreign keys; on a
      fresh one it just builds everything.
    - **Incremental:** on an existing database, run the migrations in numeric
      order, once: `001_lock_down_rls.sql` → `002_chat_matchers.sql` →
-     `003_pending_input.sql` → `004_upgrade.sql`.
+     `003_pending_input.sql` → `004_upgrade.sql` → `005_stage5.sql`.
    - Migrations must be run in order and **once**. `002` and `003` are **not**
      re-runnable after `004` (004 replaces `chat_matchers` with a new return type,
      and `CREATE OR REPLACE` cannot change a function's return type). `004` and
@@ -62,13 +62,13 @@ respects the subscription being active.
 
 Copy `.env.example` to `.env` and fill it in:
 
-| Variable         | Required | Description                                                        |
-| ---------------- | -------- | ------------------------------------------------------------------ |
-| `BOT_TOKEN`      | yes      | Token from BotFather                                               |
-| `SUPABASE_URL`   | yes      | `https://<project>.supabase.co`                                    |
-| `SUPABASE_KEY`   | yes      | Supabase **service_role** key                                      |
-| `DEBUG`          | no       | `true` logs message text to the console (default `false`)          |
-| `AD_FILTER_MODE` | no       | `off`, `log` (default) or `drop` — see Ad filter below             |
+| Variable         | Required | Description                                               |
+| ---------------- | -------- | --------------------------------------------------------- |
+| `BOT_TOKEN`      | yes      | Token from BotFather                                      |
+| `SUPABASE_URL`   | yes      | `https://<project>.supabase.co`                           |
+| `SUPABASE_KEY`   | yes      | Supabase **service_role** key                             |
+| `DEBUG`          | no       | `true` logs message text to the console (default `false`) |
+| `AD_FILTER_MODE` | no       | `off`, `log` (default) or `drop` — see Ad filter below    |
 
 `.env` is gitignored. Never commit it.
 
@@ -85,14 +85,19 @@ Node.js **20 or newer** is required.
 
 ## Commands
 
-| Command            | Where   | What it does                                     |
-| ------------------ | ------- | ------------------------------------------------ |
-| `/start`           | private | Main menu (Add to group, My groups, Keywords, Help, Privacy) |
-| `/help`            | private | What Huntzz does + how to never miss an alert    |
-| `/privacy`         | private | Plain-language data handling                     |
-| `/keywords`        | private | Add/remove keywords per subscribed group         |
-| `/unsubscribeall`  | private | Stop following every group (keywords are kept)   |
-| `/cancel`          | private | Cancel a pending keyword entry                   |
+| Command           | Where   | What it does                                                 |
+| ----------------- | ------- | ------------------------------------------------------------ |
+| `/start`          | private | Main menu (Add to group, My groups, Keywords, Help, Privacy) |
+| `/help`           | private | What Huntzz does + how to never miss an alert                |
+| `/privacy`        | private | Plain-language data handling                                 |
+| `/keywords`       | private | Add/remove keywords per subscribed group                     |
+| `/unsubscribeall` | private | Stop following every group (keywords are kept)               |
+| `/pause [hours]`  | private | Pause alerts for up to 30 days                               |
+| `/resume`         | private | Resume paused alerts                                         |
+| `/quiet HH HH`    | private | Set quiet hours, including overnight windows                 |
+| `/quietoff`       | private | Clear quiet hours                                            |
+| `/deleteme`       | private | Permanently delete your account data                         |
+| `/cancel`         | private | Cancel a pending keyword entry                               |
 
 ---
 
@@ -140,13 +145,14 @@ worker process**.
 
 ```
 bot.js                        # the whole bot
-schema.sql                    # complete current schema (version 4) — fresh installs run this
+schema.sql                    # complete current schema (version 5) — fresh installs run this
 migrations/
   001_lock_down_rls.sql       # RLS on, all permissive policies dropped
   002_chat_matchers.sql       # single-query matcher RPC (superseded by 004)
   003_pending_input.sql       # pending_input table, users.blocked, subscriptions.active
   004_upgrade.sql             # pause/quiet/tz, alert_admins, alerts inbox, stats,
                               # FK cascade rules, migrate_chat, new chat_matchers, inbox RPCs
+   005_stage5.sql              # duplicate alert protection
 .env.example                  # template for .env
 ```
 
